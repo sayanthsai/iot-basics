@@ -1,0 +1,199 @@
+/* =========================================================
+   EXPERIMENT : ESP8266 I2C SLAVE + DHT11
+   BOARD      : ESP8266 NodeMCU
+   DHT11      : DATA -> D5 / GPIO14
+   I2C SDA    : D2 / GPIO4
+   I2C SCL    : D1 / GPIO5
+   I2C ADDRESS: 0x08
+   ========================================================= */
+
+#include <Wire.h>
+#include "DHT.h"
+
+
+// =========================================================
+// DHT11
+// =========================================================
+
+#define DHT_PIN 14        // D5 = GPIO14
+#define DHT_TYPE DHT11
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+
+// =========================================================
+// I2C
+// =========================================================
+
+#define I2C_ADDRESS 0x08
+
+#define I2C_SDA 4        // D2
+#define I2C_SCL 5        // D1
+
+
+// =========================================================
+// Sensor data
+// =========================================================
+
+// Temperature ×10
+// Humidity ×10
+
+volatile int16_t temperature10 = 0;
+volatile int16_t humidity10 = 0;
+
+
+// =========================================================
+// I2C REQUEST CALLBACK
+// Master requests 4 bytes
+// =========================================================
+
+void onRequest()
+{
+  uint8_t data[4];
+
+  int16_t t = temperature10;
+  int16_t h = humidity10;
+
+
+  // Temperature - low byte
+  data[0] = t & 0xFF;
+
+  // Temperature - high byte
+  data[1] = (t >> 8) & 0xFF;
+
+
+  // Humidity - low byte
+  data[2] = h & 0xFF;
+
+  // Humidity - high byte
+  data[3] = (h >> 8) & 0xFF;
+
+
+  // Send 4 bytes to I2C master
+  Wire.write(data, 4);
+}
+
+
+// =========================================================
+// SETUP
+// =========================================================
+
+void setup()
+{
+  Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("=================================");
+  Serial.println(" ESP8266 I2C SLAVE + DHT11");
+  Serial.println("=================================");
+
+
+  // -------------------------------------------------------
+  // Start DHT11
+  // -------------------------------------------------------
+
+  dht.begin();
+
+  Serial.println("DHT11 Started");
+
+
+  // -------------------------------------------------------
+  // Start I2C as SLAVE
+  // -------------------------------------------------------
+
+  Wire.begin(
+    I2C_ADDRESS,
+    I2C_SDA,
+    I2C_SCL
+  );
+
+  Wire.setClock(100000);
+
+  Wire.onRequest(onRequest);
+
+
+  Serial.println("I2C Slave Started");
+
+  Serial.print("I2C Address: 0x");
+  Serial.println(I2C_ADDRESS, HEX);
+
+  Serial.print("SDA: GPIO");
+  Serial.println(I2C_SDA);
+
+  Serial.print("SCL: GPIO");
+  Serial.println(I2C_SCL);
+
+  Serial.println();
+  Serial.println("ESP8266 I2C SLAVE READY");
+}
+
+
+// =========================================================
+// LOOP
+// =========================================================
+
+void loop()
+{
+  // -------------------------------------------------------
+  // Read DHT11
+  // -------------------------------------------------------
+
+  float temperature = dht.readTemperature();
+
+  float humidity = dht.readHumidity();
+
+
+  // -------------------------------------------------------
+  // Check reading
+  // -------------------------------------------------------
+
+  if (!isnan(temperature) && !isnan(humidity))
+  {
+
+    // Convert to integer ×10
+    //
+    // Example:
+    // 28.5°C -> 285
+    // 72.3%  -> 723
+
+    temperature10 =
+      (int16_t)(temperature * 10.0);
+
+    humidity10 =
+      (int16_t)(humidity * 10.0);
+
+
+    // -----------------------------------------------------
+    // Serial monitor
+    // -----------------------------------------------------
+
+    Serial.println();
+    Serial.println("-----------------------------");
+
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" °C");
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+
+    Serial.print("Temperature10: ");
+    Serial.println(temperature10);
+
+    Serial.print("Humidity10: ");
+    Serial.println(humidity10);
+
+    Serial.println("-----------------------------");
+  }
+  else
+  {
+    Serial.println("DHT11 ERROR");
+  }
+
+
+  // DHT11 requires approximately 2 seconds
+  delay(2000);
+}
