@@ -1,0 +1,47 @@
+#include "DHT.h"
+
+#define DHT_PIN 4
+#define DHT_TYPE DHT11
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+void setup() {
+  Serial.begin(115200);
+
+  dht.begin();
+
+  Serial.println();
+  Serial.println("DHT11 Sensor Communication");
+  Serial.println("System Ready...");
+  Serial.println();
+}
+
+void loop() {
+
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  if (isnan(temperature) || isnan(humidity)) {
+
+    Serial.println("--------------------------------");
+    Serial.println("ERROR: DHT11 DATA NOT RECEIVED");
+    Serial.println("--------------------------------");
+    
+  } else {
+
+    Serial.println("--------------------------------");
+
+    Serial.print("Temperature : ");
+    Serial.print(temperature, 1);
+    Serial.println(" °C");
+
+    Serial.print("Humidity    : ");
+    Serial.print(humidity, 1);
+    Serial.println(" %");
+
+    Serial.println("--------------------------------");
+    Serial.println("STATUS      : DATA RECEIVED");
+  }
+
+  delay(2000);
+}
