@@ -1,0 +1,218 @@
+/* =====================================================================
+   EXPERIMENT : Real-Time Environmental Data Acquisition & MQTT Streaming
+   HARDWARE   : ESP8266 NodeMCU + DHT11
+   DHT11 DATA : GPIO 4 (D2)
+   BROKER     : HiveMQ Cloud, MQTT over TLS, port 8883
+   TOPIC      : esp32/sensor
+   ===================================================================== */
+
+#include <ESP8266WiFi.h>          // ESP8266 Wi-Fi
+#include <WiFiClientSecure.h>     // TLS/SSL
+#include <PubSubClient.h>         // MQTT
+#include <DHT.h>                  // DHT11 driver
+
+
+/* ---------------- 1. USER CONFIGURATION ---------------- */
+
+const char* ssid          = "Sayanth";
+const char* password      = "toybase@132";
+
+const char* mqtt_server   = "baeeab6d0e9842889fa9c6a462f83fd5.s1.eu.hivemq.cloud";
+const int   mqtt_port     = 8883;
+
+const char* mqtt_user     = "test123456";
+const char* mqtt_password = "test123456";
+
+const char* topic         = "esp32/sensor";
+
+// Use a different client ID from your ESP32
+const char* clientId      = "ESP8266_DHT11_Node1";
+
+
+/* ---------------- 2. SENSOR SETUP ---------------- */
+
+// GPIO 4 = D2 on NodeMCU
+#define DHTPIN   4
+#define DHTTYPE  DHT11
+
+DHT dht(DHTPIN, DHTTYPE);
+
+
+/* ---------------- 3. NETWORK OBJECTS ---------------- */
+
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+
+
+/* ---------------- 4. TIMING ---------------- */
+
+unsigned long lastPublish = 0;
+
+const unsigned long PUBLISH_INTERVAL = 5000;
+
+
+/* ======================= Wi-Fi CONNECTION ======================= */
+
+void connectWiFi() {
+
+  Serial.print("Connecting to WiFi");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("WiFi connected");
+
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+/* ======================= MQTT CONNECTION ======================= */
+
+void connectMQTT() {
+
+  while (!client.connected()) {
+
+    Serial.print("Connecting to MQTT broker...");
+
+    if (client.connect(clientId, mqtt_user, mqtt_password)) {
+
+      Serial.println(" CONNECTED");
+
+    } else {
+
+      Serial.print(" FAILED, rc=");
+      Serial.print(client.state());
+
+      Serial.println(" -> retrying in 3 seconds");
+
+      delay(3000);
+    }
+  }
+}
+
+
+/* ============================ SETUP ============================ */
+
+void setup() {
+
+  Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("=================================");
+  Serial.println(" ESP8266 DHT11 MQTT Publisher");
+  Serial.println("=================================");
+
+  // Start DHT11
+  dht.begin();
+
+  // Connect Wi-Fi
+  connectWiFi();
+
+  // TLS
+  // WARNING: certificate verification is disabled
+  espClient.setInsecure();
+
+  // MQTT server
+  client.setServer(mqtt_server, mqtt_port);
+
+  // MQTT keep-alive
+  client.setKeepAlive(60);
+
+  // Connect to MQTT
+  connectMQTT();
+}
+
+
+/* ============================= LOOP ============================= */
+
+void loop() {
+
+  // Reconnect Wi-Fi if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
+  // Reconnect MQTT if disconnected
+  if (!client.connected()) {
+    connectMQTT();
+  }
+
+  // Maintain MQTT connection
+  client.loop();
+
+
+  /* ---- Publish every 5 seconds ---- */
+
+  if (millis() - lastPublish >= PUBLISH_INTERVAL) {
+
+    lastPublish = millis();
+
+
+    /* ---- Read DHT11 ---- */
+
+    float humidity = dht.readHumidity();
+
+    float temperature = dht.readTemperature();
+
+
+    /* ---- Check sensor reading ---- */
+
+    if (isnan(humidity) || isnan(temperature)) {
+
+      Serial.println(
+        "DHT11 read failed - check wiring / pull-up"
+      );
+
+      return;
+    }
+
+
+    /* ---- Calculate heat index ---- */
+
+    float heatIndex =
+      dht.computeHeatIndex(
+        temperature,
+        humidity,
+        false
+      );
+
+
+    /* ---- Create JSON payload ---- */
+
+    char payload[128];
+
+    snprintf(
+      payload,
+      sizeof(payload),
+      "{\"temperature\":%.1f,\"humidity\":%.1f,\"heat_index\":%.1f}",
+      temperature,
+      humidity,
+      heatIndex
+    );
+
+
+    /* ---- Publish MQTT message ---- */
+
+    if (client.publish(topic, payload)) {
+
+      Serial.print("Published -> ");
+      Serial.println(payload);
+
+    } else {
+
+      Serial.println(
+        "Publish FAILED"
+      );
+    }
+  }
+}
