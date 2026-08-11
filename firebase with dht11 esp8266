@@ -1,0 +1,265 @@
+/* ================================================================
+   EXPERIMENT : DHT11 Environmental Data to Firebase
+   HARDWARE   : ESP8266 NodeMCU + DHT11
+   DHT11 DATA : GPIO 4 (D2)
+   DATABASE   : Firebase Realtime Database
+   ================================================================ */
+
+#include <ESP8266WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <DHT.h>
+
+// Firebase helper files
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+
+// =================================================
+// WiFi
+// =================================================
+
+#define WIFI_SSID "Sayanth"
+#define WIFI_PASSWORD "toybase@132"
+
+
+// =================================================
+// Firebase
+// =================================================
+
+#define API_KEY "AIzaSyDIiXBYu9llHZJ_Y_ESH3eYME-Ax2d15XM"
+
+#define DATABASE_URL "https://test33-7bcb9-default-rtdb.asia-southeast1.firebasedatabase.app"
+
+
+// =================================================
+// DHT11
+// =================================================
+
+// GPIO 4 = D2 on NodeMCU
+#define DHTPIN 4
+#define DHTTYPE DHT11
+
+DHT dht(DHTPIN, DHTTYPE);
+
+
+// =================================================
+// Firebase objects
+// =================================================
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+
+// =================================================
+// Timing
+// =================================================
+
+unsigned long lastSend = 0;
+
+const unsigned long SEND_INTERVAL = 5000;
+
+
+// =================================================
+// SETUP
+// =================================================
+
+void setup()
+{
+  Serial.begin(115200);
+
+  delay(1000);
+
+  Serial.println();
+  Serial.println("=================================");
+  Serial.println(" ESP8266 DHT11 Firebase System");
+  Serial.println("=================================");
+
+
+  // =================================================
+  // Start DHT11
+  // =================================================
+
+  dht.begin();
+
+  Serial.println("DHT11 Started");
+
+
+  // =================================================
+  // Connect WiFi
+  // =================================================
+
+  WiFi.mode(WIFI_STA);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println();
+
+  Serial.println("WiFi Connected");
+
+  Serial.print("ESP8266 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+
+  // =================================================
+  // Firebase configuration
+  // =================================================
+
+  config.api_key = API_KEY;
+
+  config.database_url = DATABASE_URL;
+
+
+  // =================================================
+  // Anonymous Firebase login
+  // =================================================
+
+  Serial.println("Connecting to Firebase...");
+
+  if (Firebase.signUp(&config, &auth, "", ""))
+  {
+    Serial.println("Firebase authentication successful");
+  }
+  else
+  {
+    Serial.print("Firebase authentication failed: ");
+
+    Serial.println(
+      config.signer.signupError.message.c_str()
+    );
+  }
+
+
+  // =================================================
+  // Start Firebase
+  // =================================================
+
+  Firebase.begin(&config, &auth);
+
+  Firebase.reconnectWiFi(true);
+
+  Serial.println("Firebase started");
+
+  Serial.println();
+  Serial.println("System ready!");
+}
+
+
+// =================================================
+// LOOP
+// =================================================
+
+void loop()
+{
+
+  // =================================================
+  // Send data every 5 seconds
+  // =================================================
+
+  if (Firebase.ready() &&
+      millis() - lastSend >= SEND_INTERVAL)
+  {
+
+    lastSend = millis();
+
+
+    // =================================================
+    // Read DHT11
+    // =================================================
+
+    float temperature = dht.readTemperature();
+
+    float humidity = dht.readHumidity();
+
+
+    // =================================================
+    // Check DHT11 reading
+    // =================================================
+
+    if (isnan(temperature) || isnan(humidity))
+    {
+      Serial.println(
+        "ERROR: Failed to read DHT11!"
+      );
+
+      return;
+    }
+
+
+    // =================================================
+    // Print sensor values
+    // =================================================
+
+    Serial.println();
+    Serial.println("============================");
+
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" °C");
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+
+
+    // =================================================
+    // Send temperature to Firebase
+    // =================================================
+
+    if (Firebase.RTDB.setFloat(
+          &fbdo,
+          "/Sensor/Temperature",
+          temperature))
+    {
+      Serial.println(
+        "Temperature uploaded successfully"
+      );
+    }
+    else
+    {
+      Serial.print(
+        "Temperature upload failed: "
+      );
+
+      Serial.println(
+        fbdo.errorReason()
+      );
+    }
+
+
+    // =================================================
+    // Send humidity to Firebase
+    // =================================================
+
+    if (Firebase.RTDB.setFloat(
+          &fbdo,
+          "/Sensor/Humidity",
+          humidity))
+    {
+      Serial.println(
+        "Humidity uploaded successfully"
+      );
+    }
+    else
+    {
+      Serial.print(
+        "Humidity upload failed: "
+      );
+
+      Serial.println(
+        fbdo.errorReason()
+      );
+    }
+
+
+    Serial.println("============================");
+  }
+}
