@@ -1,0 +1,126 @@
+/* =====================================================================
+   EXPERIMENT : Real-Time Environmental Data Acquisition & MQTT Streaming
+   HARDWARE   : ESP32 DevKit  +  DHT11  (DATA pin -> GPIO 4)
+   BROKER     : HiveMQ Cloud, MQTT over TLS, port 8883
+   TOPIC      : esp32/sensor
+   ===================================================================== */
+ 
+#include <WiFi.h>              // Wi-Fi station driver for the ESP32
+#include <WiFiClientSecure.h>  // TLS/SSL wrapper around the TCP socket
+#include <PubSubClient.h>      // MQTT protocol implementation
+#include <DHT.h>               // Adafruit DHT11 / DHT22 driver
+ 
+/* ---------------- 1. USER CONFIGURATION ---------------- */
+const char* ssid          = "Sayanth";       // 2.4 GHz network only
+const char* password      = "toybase@132";
+ 
+const char* mqtt_server   = "baeeab6d0e9842889fa9c6a462f83fd5.s1.eu.hivemq.cloud";
+const int   mqtt_port     = 8883;                   // TLS port
+const char* mqtt_user     = "test123456";
+const char* mqtt_password = "test123456";
+ 
+const char* topic         = "esp32/sensor";         // publish address
+const char* clientId      = "ESP32_DHT11_Node1";    // must be unique
+ 
+/* ---------------- 2. SENSOR SETUP ---------------- */
+#define DHTPIN   4            // GPIO wired to the DHT11 DATA pin
+#define DHTTYPE  DHT11        // change to DHT22 if using an AM2302
+DHT dht(DHTPIN, DHTTYPE);     // create the sensor object
+ 
+/* ---------------- 3. NETWORK OBJECTS ---------------- */
+WiFiClientSecure espClient;            // secure transport layer
+PubSubClient     client(espClient);    // MQTT layer riding on top of it
+ 
+/* ---------------- 4. TIMING (non-blocking) ---------------- */
+unsigned long lastPublish = 0;
+const unsigned long PUBLISH_INTERVAL = 5000;  // ms (DHT11 needs >= 2000)
+ 
+/* ======================= Wi-Fi CONNECTION ======================= */
+void connectWiFi() {
+  Serial.print("Connecting to WiFi");
+  WiFi.mode(WIFI_STA);             // act as a station, not an access point
+  WiFi.begin(ssid, password);
+ 
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("WiFi connected.  IP address: ");
+  Serial.println(WiFi.localIP());
+}
+ 
+/* ======================= MQTT CONNECTION ======================= */
+void connectMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connecting to MQTT broker...");
+ 
+    if (client.connect(clientId, mqtt_user, mqtt_password)) {
+      Serial.println(" CONNECTED");
+    } else {
+      Serial.print(" FAILED, rc=");
+      Serial.print(client.state());
+      Serial.println("  -> retrying in 3 s");
+      delay(3000);
+    }
+  }
+}
+ 
+/* ============================ SETUP ============================ */
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println();
+  Serial.println("=== ESP32 DHT11 MQTT Publisher ===");
+ 
+  dht.begin();                     // initialise the sensor
+ 
+  connectWiFi();                   // 1) get on the network
+ 
+  espClient.setInsecure();         // 2) TLS without certificate checking
+  client.setServer(mqtt_server, mqtt_port);
+  client.setKeepAlive(60);         // seconds
+ 
+  connectMQTT();                   // 3) log in to the broker
+}
+ 
+/* ============================= LOOP ============================= */
+void loop() {
+ 
+  if (WiFi.status() != WL_CONNECTED) connectWiFi();   // auto-heal Wi-Fi
+  if (!client.connected())           connectMQTT();   // auto-heal MQTT
+ 
+  client.loop();     // MUST be called often: keeps the session alive
+                     // and processes incoming/outgoing packets
+ 
+  /* ---- publish once every PUBLISH_INTERVAL milliseconds ---- */
+  if (millis() - lastPublish >= PUBLISH_INTERVAL) {
+    lastPublish = millis();
+ 
+    float humidity    = dht.readHumidity();       // % RH
+    float temperature = dht.readTemperature();    // degrees Celsius
+ 
+    /* ---- validate before publishing ---- */
+    if (isnan(humidity) || isnan(temperature)) {
+      Serial.println("DHT11 read failed - check wiring / pull-up");
+      return;                       // skip this cycle, try again later
+    }
+ 
+    /* ---- derived value ---- */
+    float heatIndex = dht.computeHeatIndex(temperature, humidity, false);
+ 
+    /* ---- build the JSON payload ---- */
+    char payload[128];
+    snprintf(payload, sizeof(payload),
+      "{\"temperature\":%.1f,\"humidity\":%.1f,\"heat_index\":%.1f}",
+      temperature, humidity, heatIndex);
+ 
+    /* ---- publish to the broker ---- */
+    if (client.publish(topic, payload)) {
+      Serial.print("Published -> ");
+      Serial.println(payload);
+    } else {
+      Serial.println("Publish FAILED (not connected or payload too large)");
+    }
+  }
+}
