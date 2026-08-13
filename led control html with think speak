@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ESP32 IoT Control</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #f2f4f7;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 360px;
+      background: white;
+      padding: 30px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+      text-align: center;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      color: #777;
+      margin-bottom: 30px;
+    }
+
+    .data {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      flex: 1;
+      background: #f5f6f8;
+      padding: 15px;
+      border-radius: 12px;
+    }
+
+    .value {
+      font-size: 24px;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #777;
+    }
+
+    .led-status {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      padding: 16px;
+      margin: 8px 0;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .on {
+      background: #22c55e;
+      color: white;
+    }
+
+    .off {
+      background: #ef4444;
+      color: white;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    #message {
+      margin-top: 15px;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <h1>ESP32 Control</h1>
+
+    <div class="subtitle">
+      ThingSpeak IoT Dashboard
+    </div>
+
+    <div class="data">
+
+      <div class="card">
+        <div class="label">Temperature</div>
+        <div class="value" id="temperature">-- °C</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Humidity</div>
+        <div class="value" id="humidity">-- %</div>
+      </div>
+
+    </div>
+
+    <div class="led-status">
+      LED: <span id="ledStatus">OFF</span>
+    </div>
+
+    <button class="on" onclick="setLED(1)">
+      🟢 TURN ON
+    </button>
+
+    <button class="off" onclick="setLED(0)">
+      🔴 TURN OFF
+    </button>
+
+    <div id="message">
+      Ready
+    </div>
+
+  </div>
+
+
+<script>
+
+  // =====================================
+  // ThingSpeak settings
+  // =====================================
+
+  const WRITE_API_KEY = "YOUR_WRITE_API_KEY";
+
+  const CHANNEL_ID = "YOUR_CHANNEL_ID";
+
+  const READ_API_KEY = "YOUR_READ_API_KEY";
+
+
+  // =====================================
+  // Control LED
+  // =====================================
+
+  function setLED(value) {
+
+    const url =
+      "https://api.thingspeak.com/update" +
+      "?api_key=" + WRITE_API_KEY +
+      "&field3=" + value;
+
+    document.getElementById("message").innerText =
+      "Sending command...";
+
+    fetch(url)
+      .then(response => response.text())
+      .then(data => {
+
+        console.log("ThingSpeak response:", data);
+
+        if (data !== "0") {
+
+          if (value === 1) {
+
+            document.getElementById("ledStatus").innerText = "ON";
+
+          } else {
+
+            document.getElementById("ledStatus").innerText = "OFF";
+
+          }
+
+          document.getElementById("message").innerText =
+            "Command sent successfully";
+
+        } else {
+
+          document.getElementById("message").innerText =
+            "ThingSpeak update failed";
+
+        }
+
+      })
+
+      .catch(error => {
+
+        console.error(error);
+
+        document.getElementById("message").innerText =
+          "Connection error";
+
+      });
+
+  }
+
+
+  // =====================================
+  // Read temperature & humidity
+  // =====================================
+
+  function readData() {
+
+    const url =
+      "https://api.thingspeak.com/channels/" +
+      CHANNEL_ID +
+      "/feeds/last.json?api_key=" +
+      READ_API_KEY;
+
+
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+
+        document.getElementById("temperature").innerText =
+          data.field1 + " °C";
+
+        document.getElementById("humidity").innerText =
+          data.field2 + " %";
+
+        if (data.field3 === "1") {
+
+          document.getElementById("ledStatus").innerText = "ON";
+
+        } else {
+
+          document.getElementById("ledStatus").innerText = "OFF";
+
+        }
+
+      })
+      .catch(error => {
+
+        console.error(error);
+
+      });
+
+  }
+
+
+  // Read data immediately
+  readData();
+
+
+  // Update every 20 seconds
+  setInterval(readData, 20000);
+
+</script>
+
+</body>
+</html>
